@@ -172,7 +172,10 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
             ))}
           </ul>
         )}
-        <div className="mt-8 flex gap-5 font-mono text-[11px] text-mute"><span><kbd>↵</kbd> again</span><span><kbd>esc</kbd> home</span></div>
+        <div className="mt-8 flex gap-2">
+          <button onClick={() => window.location.reload()} className="h-11 px-5 bg-fg text-bg text-sm font-medium flex items-center gap-3">Again <kbd className="hidden sm:inline opacity-60">↵</kbd></button>
+          <button onClick={() => router.push('/')} className="h-11 px-5 border border-line text-sm flex items-center gap-3">Home <kbd className="hidden sm:inline">esc</kbd></button>
+        </div>
       </div>
     );
   }
@@ -200,7 +203,10 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
               <div className="font-mono text-[11px] uppercase tracking-wider text-mute">Shortcut</div>
               <div className="mt-1.5 leading-relaxed">{last.shortcut}</div>
             </div>
-            <div className="mt-8 flex gap-5 font-mono text-[11px] text-mute"><span><kbd>↵</kbd> next</span><span><kbd>esc</kbd> end</span></div>
+            <div className="mt-8 flex gap-2">
+              <button onClick={() => { setPhase('run'); next(); }} className="h-11 px-5 bg-fg text-bg text-sm font-medium flex items-center gap-3">Next <kbd className="hidden sm:inline opacity-60">↵</kbd></button>
+              <button onClick={finish} className="h-11 px-5 border border-line text-sm flex items-center gap-3">End <kbd className="hidden sm:inline">esc</kbd></button>
+            </div>
           </div>
         ) : (
           <div>
@@ -218,9 +224,9 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
             <div className="mt-8 h-px bg-line relative overflow-hidden">
               <div key={q.id} className="absolute inset-0 bg-acc origin-left" style={{ animation: `fill ${q.targetMs}ms linear forwards` }} />
             </div>
-            <div className="flex items-baseline gap-2 mt-4">
+            <form className="flex items-center gap-2 mt-4" onSubmit={(e) => { e.preventDefault(); submit(val); }}>
               <input
-                ref={input} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={val}
+                ref={input} type="text" inputMode="decimal" enterKeyHint="go" autoComplete="off" spellCheck={false} value={val}
                 placeholder="answer"
                 onChange={(e) => {
                   const s = e.target.value;
@@ -233,10 +239,16 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
                   else if (e.key === 'Tab') { e.preventDefault(); setAuto((a) => { try { localStorage.setItem('auto', a ? '0' : '1'); } catch {} return !a; }); }
                   else if (e.key === 'Escape') finish();
                 }}
-                className={`w-full bg-transparent font-mono text-4xl sm:text-5xl placeholder:text-line transition-colors ${flash === 'ok' ? 'text-ok' : flash === 'bad' ? 'text-bad' : ''}`}
+                className={`min-w-0 w-full bg-transparent font-mono text-4xl sm:text-5xl placeholder:text-line transition-colors ${flash === 'ok' ? 'text-ok' : flash === 'bad' ? 'text-bad' : ''}`}
               />
               {q.unit && <span className="font-mono text-3xl text-mute">{q.unit}</span>}
-            </div>
+              {/* Touch controls: iOS number pad has no Enter or minus key. onPointerDown keeps the keyboard open. */}
+              <button type="button" aria-label="Toggle minus sign" onPointerDown={(e) => e.preventDefault()}
+                onClick={() => setVal((s) => (s.startsWith('-') ? s.slice(1) : '-' + s))}
+                className="sm:hidden shrink-0 size-12 border border-line font-mono text-xl">±</button>
+              <button type="submit" onPointerDown={(e) => e.preventDefault()}
+                className="shrink-0 h-12 px-4 bg-fg text-bg text-sm font-medium">OK</button>
+            </form>
           </div>
         )}
       </div>
@@ -248,9 +260,12 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
           </span>
         )}
         {note && <span className="text-acc">{note}</span>}
-        <span className="ml-auto"><kbd>↵</kbd> submit</span>
-        <span><kbd>tab</kbd> auto-submit {auto ? 'on' : 'off'}</span>
-        <span><kbd>esc</kbd> end</span>
+        <span className="ml-auto hidden sm:inline"><kbd>↵</kbd> submit</span>
+        <button type="button" onPointerDown={(e) => e.preventDefault()} className="ml-auto sm:ml-0 py-2 sm:py-0"
+          onClick={() => setAuto((a) => { try { localStorage.setItem('auto', a ? '0' : '1'); } catch {} return !a; })}>
+          <kbd className="hidden sm:inline">tab</kbd> auto-submit {auto ? 'on' : 'off'}
+        </button>
+        <button type="button" onClick={finish} className="py-2 sm:py-0"><kbd className="hidden sm:inline">esc</kbd> end</button>
       </div>
     </div>
   );
