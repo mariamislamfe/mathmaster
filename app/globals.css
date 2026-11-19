@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg); --color-fg: var(--fg); --color-mute: var(--mute); --color-line: var(--line);
+  --color-panel: var(--panel); --color-acc: var(--acc); --color-ok: var(--ok); --color-bad: var(--bad); --color-warn: var(--warn);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+:root { --bg:#f5f4f0; --fg:#141414; --mute:#77746c; --line:#e1ded6; --panel:#ecebe6; --acc:#d9480f; --ok:#2b8a5e; --bad:#d23a3f; --warn:#b07a00; }
+.dark { --bg:#0d0d0e; --fg:#e9e8e4; --mute:#85837d; --line:#232325; --panel:#161618; --acc:#ff7438; --ok:#4cc38a; --bad:#ff5a5f; --warn:#e6b54a; }
+html { background: var(--bg); color: var(--fg); color-scheme: light; }
+html.dark { color-scheme: dark; }
+body { font-variant-numeric: tabular-nums; }
+::selection { background: var(--acc); color: var(--bg); }
+kbd { font-family: var(--font-mono); font-size: 10px; line-height: 1; padding: 3px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; color: var(--mute); }
+@keyframes fill { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+input:focus { outline: none; }
