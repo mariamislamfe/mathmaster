@@ -137,7 +137,7 @@ const GEN: Record<Skill, (L: number) => Core> = {
       if (Math.random() < 0.5) { const t = R(2, 9), u = R(1, 9); a = t * 10 + u; b = t * 10 + 10 - u; }
       else { const m = R(2, 9) * 10, d = R(1, 9); a = m + d; b = m - d; }
     } else {
-      const [a0, a1, b0, b1] = [[11, 29, 11, 19], [11, 99, 11, 99], [21, 99, 21, 99], [100, 499, 11, 99], [100, 999, 21, 99]][L - 1];
+      const [a0, a1, b0, b1] = [[11, 19, 11, 15], [11, 99, 11, 99], [21, 99, 21, 99], [100, 499, 11, 99], [100, 999, 21, 99]][L - 1];
       a = R(a0, a1); b = R(b0, b1);
     }
     return { prompt: `${f(a)} × ${f(b)}`, answer: a * b, shortcut: mulRoute(a, b) };
@@ -248,8 +248,12 @@ const GEN: Record<Skill, (L: number) => Core> = {
     return { prompt: `Payoffs: ${ps.map((p, i) => `${p}% → ${money(vs[i])}`).join(', ')}. EV?`, answer: e, tolAbs: 0.01, shortcut: `${terms.map((t) => f(t)).join(' + ').replace(/\+ −/g, '− ')} = ${money(e)}` };
   },
   condprob: (L) => {
-    if (L <= 2) {
-      const r = R(2, L === 1 ? 5 : 9), b = R(2, L === 1 ? 6 : 12), n = r + b, a = ((r * (r - 1)) / (n * (n - 1))) * 100;
+    if (L === 1) {
+      const r = R(1, 9), n = r + R(1, 9) * (r < 5 ? 1 : 2), w = P([5, 10, 20, 4]), N = w * Math.ceil(n / w) || n, a = (r / N) * 100;
+      return { prompt: `Bag: ${r} red out of ${N} balls. Draw one. P(red)?`, unit: '%', answer: a, tolAbs: 0.5, shortcut: `${r}/${N} = ${frac(r, N)} ≈ ${f(a, 1)}%` };
+    }
+    if (L === 2) {
+      const r = R(2, 6), b = R(2, 8), n = r + b, a = ((r * (r - 1)) / (n * (n - 1))) * 100;
       return { prompt: `Bag: ${r} red, ${b} blue. Draw 2 without replacement. P(both red)?`, unit: '%', answer: a, tolAbs: 0.5, shortcut: `${r}/${n} × ${r - 1}/${n - 1} = ${frac(r * (r - 1), n * (n - 1))} ≈ ${f(a, 1)}%` };
     }
     if (L === 3) {
@@ -329,12 +333,32 @@ export function parseInput(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Sliding-window adaptation: promote at ≥90% accuracy under target time, demote under 60%. */
-export function adapt(level: number, window: { c: boolean; ms: number }[], targetMs: number) {
-  if (window.length < 6) return level;
-  const acc = window.filter((x) => x.c).length / window.length;
-  const avg = window.reduce((s, x) => s + x.ms, 0) / window.length;
-  if (acc >= 0.9 && avg < targetMs && level < 5) return level + 1;
-  if (acc < 0.6 && level > 1) return level - 1;
-  return level;
+/** Learning order, easiest first. New skills unlock along this path. */
+export const CURRICULUM: Skill[] = ['add', 'sub', 'mul21', 'pct', 'div', 'square', 'change', 'mul22', 'ratio', 'margin', 'root', 'sequence', 'breakeven', 'ev', 'estimate', 'condprob'];
+export const UNLOCK_LEVEL = 2;
+export const STREAK_UP = 3;
+
+export type SkillState = { level: number; streak: number; misses: number };
+export const freshState = (): SkillState => ({ level: 1, streak: 0, misses: 0 });
+
+/** 3 correct-and-quick in a row → level up. 2 misses in a row → level down. Slow-but-correct holds. */
+export function step(s: SkillState, ok: boolean, quick: boolean): SkillState {
+  if (ok && quick) {
+    const streak = s.streak + 1;
+    return streak >= STREAK_UP && s.level < 5 ? { level: s.level + 1, streak: 0, misses: 0 } : { ...s, streak: Math.min(streak, STREAK_UP), misses: 0 };
+  }
+  if (ok) return { ...s, misses: 0 };
+  const misses = s.misses + 1;
+  return misses >= 2 && s.level > 1 ? { level: s.level - 1, streak: 0, misses: 0 } : { ...s, streak: 0, misses };
+}
+
+/** Skills in play: everything already past the unlock level, plus at most two still being learned. */
+export function activeSkills(pool: Skill[], level: (s: Skill) => number): Skill[] {
+  const out: Skill[] = [];
+  let learning = 0;
+  for (const s of CURRICULUM.filter((x) => pool.includes(x))) {
+    out.push(s);
+    if (level(s) < UNLOCK_LEVEL && ++learning >= 2) break;
+  }
+  return out;
 }

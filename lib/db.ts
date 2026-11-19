@@ -26,6 +26,13 @@ export const SCHEMA = [
     ms int not null,
     shortcut text
   )`,
+  `create table if not exists skill_state (
+    skill text primary key,
+    level int not null default 1,
+    streak int not null default 0,     -- quick correct answers in a row
+    misses int not null default 0,     -- misses in a row
+    updated_at timestamptz not null default now()
+  )`,
   `create index if not exists ql_skill_time on question_logs (skill, created_at desc)`,
   `create index if not exists ql_time on question_logs (created_at)`,
 ];

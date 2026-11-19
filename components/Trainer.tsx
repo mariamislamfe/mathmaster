@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ALL_SKILLS, SKILLS, adapt, check, fmt, generate, parseInput, skillsOf, type Question, type Skill } from '@/lib/engine';
+import { ALL_SKILLS, SKILLS, STREAK_UP, activeSkills, check, fmt, freshState, generate, parseInput, skillsOf, step, type Question, type Skill, type SkillState } from '@/lib/engine';
 
 type Mode = 'sprint' | 'practice' | 'drill';
 type Log = { at: string; cat: string; skill: Skill; level: number; prompt: string; answer: string; given: string; correct: boolean; slow: boolean; ms: number; shortcut: string; unit?: string };
@@ -25,28 +25,36 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
   const [, tick] = useState(0);
 
   const pool = useRef<Skill[]>([]);
-  const levels = useRef<Record<string, number>>({});
-  const hist = useRef<Record<string, { c: boolean; ms: number }[]>>({});
+  const states = useRef<Record<string, SkillState>>({});
+  const touched = useRef(new Set<Skill>());
+  const retry = useRef<{ skill: Skill; need: number; tries: number } | null>(null);
   const logs = useRef<Log[]>([]);
   const t0 = useRef(0), started = useRef(0), input = useRef<HTMLInputElement>(null), ended = useRef(false);
   const timed = mode !== 'practice', teach = mode !== 'sprint';
+  const st = (s: Skill) => states.current[s] ?? freshState();
+  const lvl = (s: Skill) => st(s).level;
 
-  const next = useCallback(() => {
-    const p = pool.current, prev = q?.skill;
-    const choices = p.length > 1 ? p.filter((s) => s !== prev) : p;
-    const s = choices[Math.floor(Math.random() * choices.length)];
-    setQ(generate(s, levels.current[s] ?? 1));
-    setVal('');
-    t0.current = performance.now();
-  }, [q]);
+  // After a miss: same skill until 2 right in a row. Otherwise: unlocked skills, weighted toward the weaker ones.
+  const pick = (avoid?: Skill): Skill => {
+    if (retry.current) return retry.current.skill;
+    const act = mode === 'drill' ? pool.current : activeSkills(pool.current, lvl);
+    const c = act.length > 1 ? act.filter((s) => s !== avoid) : act;
+    const w = c.map((s) => 6 - lvl(s));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < c.length; i++) if ((r -= w[i]) < 0) return c[i];
+    return c[0];
+  };
+  const ask = (s: Skill) => { setQ(generate(s, lvl(s))); setVal(''); t0.current = performance.now(); };
 
-  // boot: pull levels + weak skills from Neon
+  const next = useCallback(() => ask(pick(q?.skill)), [q]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // boot: pull skill states + weak skills from Neon
   useEffect(() => {
     let live = true;
     try { setAuto(localStorage.getItem('auto') === '1'); } catch {}
-    fetch('/api/state').then((r) => r.json()).catch(() => ({ levels: {}, weak: [] })).then((st) => {
+    fetch('/api/state').then((r) => r.json()).catch(() => ({ states: {}, weak: [] })).then((st) => {
       if (!live) return;
-      levels.current = st.levels || {};
+      states.current = st.states || {};
       let p: Skill[] = mode === 'drill' ? (st.weak || []).filter((s: string) => s in SKILLS) : skillsOf(scope);
       if (mode === 'drill' && p.length < 3) {
         setNote(p.length ? 'Not enough history for three weak skills yet; topped up at random.' : 'No history yet; drilling three random skills.');
@@ -56,12 +64,10 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
       pool.current = p.length ? p : ALL_SKILLS;
       started.current = Date.now();
       setPhase('run');
-      const s = pool.current[Math.floor(Math.random() * pool.current.length)];
-      setQ(generate(s, levels.current[s] ?? 1));
-      t0.current = performance.now();
+      ask(pick());
     });
     return () => { live = false; };
-  }, [mode, scope]);
+  }, [mode, scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const finish = useCallback(() => {
     if (ended.current) return;
@@ -71,7 +77,8 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
     setSaved('saving');
     fetch('/api/session', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode, scope, startedAt: new Date(started.current).toISOString(), durationMs: Date.now() - started.current, logs: logs.current }),
+      body: JSON.stringify({ mode, scope, startedAt: new Date(started.current).toISOString(), durationMs: Date.now() - started.current, logs: logs.current,
+        states: [...touched.current].map((s) => ({ skill: s, ...states.current[s] })) }),
     }).then((r) => r.json()).then((r) => setSaved(r.ok ? 'saved' : 'local')).catch(() => setSaved('local'));
   }, [mode, scope]);
 
@@ -97,10 +104,17 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
     logs.current.push(log);
     tick((n) => n + 1);
 
-    const h = [...(hist.current[q.skill] ?? []), { c: ok, ms }].slice(-8);
-    const L0 = levels.current[q.skill] ?? 1, L1 = adapt(L0, h, q.targetMs);
-    hist.current[q.skill] = L1 === L0 ? h : [];
-    if (L1 !== L0) { levels.current[q.skill] = L1; setNote(`${SKILLS[q.skill].label}: level ${L0} → ${L1}`); }
+    const before = st(q.skill), after = step(before, ok, ms <= q.targetMs * 1.5);
+    const act0 = activeSkills(pool.current, lvl);
+    states.current[q.skill] = after;
+    touched.current.add(q.skill);
+    const unlocked = mode === 'drill' ? [] : activeSkills(pool.current, lvl).filter((s) => !act0.includes(s));
+    if (unlocked.length) setNote(`Unlocked: ${unlocked.map((s) => SKILLS[s].label).join(', ')}`);
+    else if (after.level !== before.level) setNote(`${SKILLS[q.skill].label}: level ${before.level} → ${after.level}${after.level < before.level ? ' (easing off)' : ''}`);
+
+    const r = retry.current;
+    if (!ok) { const tries = r?.skill === q.skill ? r.tries + 1 : 1; retry.current = tries >= 6 ? null : { skill: q.skill, need: 2, tries }; }
+    else if (r?.skill === q.skill && --r.need <= 0) retry.current = null;
 
     setLast(log);
     if (teach && (!ok || slow)) { setPhase('review'); return; }
@@ -190,9 +204,16 @@ export default function Trainer({ mode, scope, secs }: { mode: Mode; scope: stri
           </div>
         ) : (
           <div>
-            <div className="font-mono text-[11px] uppercase tracking-wider text-mute flex gap-3">
-              <span>{SKILLS[q.skill].label}</span><span>L{q.level}</span><span>{sec(q.targetMs)}</span>
+            <div className="font-mono text-[11px] uppercase tracking-wider text-mute flex items-center gap-3">
+              <span>{SKILLS[q.skill].label}</span><span>L{q.level}</span>
+              <span className="flex gap-1" title={`${STREAK_UP} quick correct answers in a row to level up`}>
+                {Array.from({ length: STREAK_UP }, (_, i) => <i key={i} className={`size-1.5 rounded-full ${i < st(q.skill).streak ? 'bg-acc' : 'bg-line'}`} />)}
+              </span>
+              <span>{sec(q.targetMs)}</span>
             </div>
+            {retry.current?.skill === q.skill && (
+              <div className="mt-2 text-xs text-warn">Same type again: {retry.current.need} more right in a row to move on.</div>
+            )}
             <div className={`mt-4 ${long ? 'text-2xl sm:text-3xl max-w-2xl leading-snug' : 'font-mono text-5xl sm:text-7xl tracking-tight'}`}>{q.prompt}</div>
             <div className="mt-8 h-px bg-line relative overflow-hidden">
               <div key={q.id} className="absolute inset-0 bg-acc origin-left" style={{ animation: `fill ${q.targetMs}ms linear forwards` }} />

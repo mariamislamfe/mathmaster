@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { ALL_SKILLS, CATS, SKILLS, type Category } from '@/lib/engine';
 
 const MODES = [
-  { k: '1', id: 'sprint', name: 'Sprint', desc: 'Against the clock. Shortcuts shown in the review.' },
-  { k: '2', id: 'practice', name: 'Practice', desc: 'Untimed. A miss or slow answer stops on the shortcut.' },
-  { k: '3', id: 'drill', name: 'Weakness drill', desc: '5 minutes on your three weakest sub-skills.' },
+  { k: '1', id: 'sprint', name: 'Sprint', desc: 'Against the clock, no stops. Shortcuts for every miss come in the review at the end.' },
+  { k: '2', id: 'practice', name: 'Practice', desc: 'Start here. No timer. A miss or slow answer stops and shows the shortcut.' },
+  { k: '3', id: 'drill', name: 'Weakness drill', desc: '5 minutes only on the three sub-skills you miss most.' },
 ];
 const SCOPES = [{ k: 'a', id: 'all', name: 'All' }, { k: 's', id: 'arithmetic', name: 'Arithmetic' }, { k: 'b', id: 'business', name: 'Business' }, { k: 'l', id: 'logic', name: 'Logic' }];
 const LENS = [{ k: 'q', v: 60, name: '1 min' }, { k: 'w', v: 120, name: '2 min' }, { k: 'e', v: 300, name: '5 min' }];
